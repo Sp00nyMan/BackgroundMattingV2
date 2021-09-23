@@ -30,24 +30,35 @@ from PIL import Image
 from dataset import VideoDataset
 from model import MattingBase, MattingRefine
 
-
 # --------------- Arguments ---------------
-
 
 parser = argparse.ArgumentParser(description='Inference from web-cam')
 
-parser.add_argument('--model-type', type=str, required=True, choices=['mattingbase', 'mattingrefine'])
-parser.add_argument('--model-backbone', type=str, required=True, choices=['resnet101', 'resnet50', 'mobilenetv2'])
+parser.add_argument('--model-type',
+                    type=str,
+                    required=True,
+                    choices=['mattingbase', 'mattingrefine'])
+parser.add_argument('--model-backbone',
+                    type=str,
+                    required=True,
+                    choices=['resnet101', 'resnet50', 'mobilenetv2'])
 parser.add_argument('--model-backbone-scale', type=float, default=0.25)
-parser.add_argument('--model-checkpoint', type=str, required=True)
-parser.add_argument('--model-refine-mode', type=str, default='sampling', choices=['full', 'sampling', 'thresholding'])
+parser.add_argument('--model-checkpoint', type=str,
+                    required=True)  # pretrained model
+parser.add_argument('--model-refine-mode',
+                    type=str,
+                    default='sampling',
+                    choices=['full', 'sampling', 'thresholding'])
 parser.add_argument('--model-refine-sample-pixels', type=int, default=80_000)
 parser.add_argument('--model-refine-threshold', type=float, default=0.7)
 
 parser.add_argument('--hide-fps', action='store_true')
-parser.add_argument('--resolution', type=int, nargs=2, metavar=('width', 'height'), default=(1280, 720))
+parser.add_argument('--resolution',
+                    type=int,
+                    nargs=2,
+                    metavar=('width', 'height'),
+                    default=(1280, 720))
 args = parser.parse_args()
-
 
 # ----------- Utility classes -------------
 
@@ -79,8 +90,10 @@ class Camera:
         with self.read_lock:
             frame = self.frame.copy()
         return frame
+
     def __exit__(self, exec_type, exc_value, traceback):
         self.capture.release()
+
 
 # An FPS tracker that computes exponentialy moving average FPS
 class FPSTracker:
@@ -88,6 +101,7 @@ class FPSTracker:
         self._last_tick = None
         self._avg_fps = None
         self.ratio = ratio
+
     def tick(self):
         if self._last_tick is None:
             self._last_tick = time.time()
@@ -97,8 +111,10 @@ class FPSTracker:
         self._avg_fps = self.ratio * fps_sample + (1 - self.ratio) * self._avg_fps if self._avg_fps is not None else fps_sample
         self._last_tick = t_new
         return self.get()
+
     def get(self):
         return self._avg_fps
+
 
 # Wrapper for playing a stream with cv2.imshow(). It can accept an image and return keypress info for basic interactivity.
 # It also tracks FPS and optionally overlays info onto the stream.
@@ -110,46 +126,49 @@ class Displayer:
         cv2.namedWindow(self.title, cv2.WINDOW_NORMAL)
         if width is not None and height is not None:
             cv2.resizeWindow(self.title, width, height)
+
     # Update the currently showing frame and return key press char code
     def step(self, image):
         fps_estimate = self.fps_tracker.tick()
         if self.show_info and fps_estimate is not None:
             message = f"{int(fps_estimate)} fps | {self.width}x{self.height}"
-            cv2.putText(image, message, (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 0))
+            cv2.putText(image, message, (10, 40), cv2.FONT_HERSHEY_SIMPLEX,
+                        1.0, (0, 0, 0))
         cv2.imshow(self.title, image)
         return cv2.waitKey(1) & 0xFF
 
 
 # --------------- Main ---------------
 
-
 # Load model
 if args.model_type == 'mattingbase':
     model = MattingBase(args.model_backbone)
 if args.model_type == 'mattingrefine':
-    model = MattingRefine(
-        args.model_backbone,
-        args.model_backbone_scale,
-        args.model_refine_mode,
-        args.model_refine_sample_pixels,
-        args.model_refine_threshold)
+    model = MattingRefine(args.model_backbone, args.model_backbone_scale,
+                          args.model_refine_mode,
+                          args.model_refine_sample_pixels,
+                          args.model_refine_threshold)
 
 model = model.cuda().eval()
 model.load_state_dict(torch.load(args.model_checkpoint), strict=False)
 
-
 width, height = args.resolution
 cam = Camera(width=width, height=height)
-dsp = Displayer('MattingV2', cam.width, cam.height, show_info=(not args.hide_fps))
+dsp = Displayer('MattingV2',
+                cam.width,
+                cam.height,
+                show_info=(not args.hide_fps))
+
 
 def cv2_frame_to_cuda(frame):
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     return ToTensor()(Image.fromarray(frame)).unsqueeze_(0).cuda()
 
+
 with torch.no_grad():
     while True:
         bgr = None
-        while True: # grab bgr
+        while True:  # grab bgr
             frame = cam.read()
             key = dsp.step(frame)
             if key == ord('b'):
@@ -157,7 +176,7 @@ with torch.no_grad():
                 break
             elif key == ord('q'):
                 exit()
-        while True: # matting
+        while True:  # matting
             frame = cam.read()
             src = cv2_frame_to_cuda(frame)
             pha, fgr = model(src, bgr)[:2]
