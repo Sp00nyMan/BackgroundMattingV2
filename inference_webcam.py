@@ -24,7 +24,6 @@ from torch.utils.data import DataLoader
 from torchvision.transforms import Compose, ToTensor, Resize
 from torchvision.transforms.functional import to_pil_image
 from threading import Thread, Lock
-from tqdm import tqdm
 from PIL import Image
 
 from dataset import VideoDataset
@@ -162,7 +161,8 @@ dsp = Displayer('MattingV2',
 
 def cv2_frame_to_cuda(frame):
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    return ToTensor()(Image.fromarray(frame)).unsqueeze_(0).cuda()
+    frame = Image.fromarray(frame)
+    return ToTensor()(frame).unsqueeze_(0).cuda()
 
 
 with torch.no_grad():
